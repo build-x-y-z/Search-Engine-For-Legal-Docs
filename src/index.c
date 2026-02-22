@@ -3,7 +3,7 @@
 
 #include "index.h"
 
-#define HASH_SIZE 1024
+#define HASH_SIZE 4096
 
 static WordEntry* g_table[HASH_SIZE];
 
@@ -11,7 +11,18 @@ static unsigned long hash_word(const char* s) {
     unsigned long h = 5381UL;
     int c;
     while ((c = (unsigned char)*s++) != 0) h = ((h << 5) + h) + (unsigned long)c;
-    return h % (unsigned long)HASH_SIZE;
+    return h;
+}
+
+static WordEntry* find_entry(const char* word, unsigned long* out_bucket) {
+    unsigned long b = hash_word(word) % (unsigned long)HASH_SIZE;
+    if (out_bucket) *out_bucket = b;
+    WordEntry* cur = g_table[b];
+    while (cur) {
+        if (strcmp(cur->word, word) == 0) return cur;
+        cur = cur->next;
+    }
+    return NULL;
 }
 
 void index_init(void) {
@@ -32,12 +43,8 @@ void index_free(void) {
 
 void insert_word(char* word, int docID) {
     if (!word || !word[0] || docID <= 0) return;
-    unsigned long b = hash_word(word);
-    WordEntry* cur = g_table[b];
-    while (cur) {
-        if (strcmp(cur->word, word) == 0) return;
-        cur = cur->next;
-    }
+    unsigned long b = 0;
+    if (find_entry(word, &b)) return;
 
     WordEntry* e = (WordEntry*)malloc(sizeof(WordEntry));
     if (!e) return;
@@ -54,22 +61,14 @@ void insert_term(const char* word, int docID, int position) {
 
 Posting* get_postings(char* word) {
     if (!word || !word[0]) return NULL;
-    WordEntry* cur = g_table[hash_word(word)];
-    while (cur) {
-        if (strcmp(cur->word, word) == 0) return cur->postingList;
-        cur = cur->next;
-    }
-    return NULL;
+    WordEntry* cur = find_entry(word, NULL);
+    return cur ? cur->postingList : NULL;
 }
 
 int get_document_frequency(const char* word) {
     if (!word || !word[0]) return 0;
-    WordEntry* cur = g_table[hash_word(word)];
-    while (cur) {
-        if (strcmp(cur->word, word) == 0) return cur->documentFrequency;
-        cur = cur->next;
-    }
-    return 0;
+    WordEntry* cur = find_entry(word, NULL);
+    return cur ? cur->documentFrequency : 0;
 }
 
 int get_vocabulary_size(void) {
