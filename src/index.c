@@ -29,11 +29,29 @@ void index_init(void) {
     for (int i = 0; i < HASH_SIZE; i++) g_table[i] = NULL;
 }
 
+static void free_positions(PositionNode* pos) {
+    while (pos) {
+        PositionNode* next = pos->next;
+        free(pos);
+        pos = next;
+    }
+}
+
+static void free_postings(Posting* p) {
+    while (p) {
+        Posting* next = p->next;
+        free_positions(p->positions);
+        free(p);
+        p = next;
+    }
+}
+
 void index_free(void) {
     for (int i = 0; i < HASH_SIZE; i++) {
         WordEntry* e = g_table[i];
         while (e) {
             WordEntry* next = e->next;
+            free_postings(e->postingList);
             free(e);
             e = next;
         }
@@ -41,22 +59,73 @@ void index_free(void) {
     }
 }
 
-void insert_word(char* word, int docID) {
-    if (!word || !word[0] || docID <= 0) return;
-    unsigned long b = 0;
-    if (find_entry(word, &b)) return;
+static Posting* find_posting(Posting* head, int docID, Posting** out_prev) {
+    Posting* prev = NULL;
+    Posting* cur = head;
+    while (cur && cur->docID < docID) {
+        prev = cur;
+        cur = cur->next;
+    }
+    if (out_prev) *out_prev = prev;
+    if (cur && cur->docID == docID) return cur;
+    return NULL;
+}
 
-    WordEntry* e = (WordEntry*)malloc(sizeof(WordEntry));
-    if (!e) return;
-    memset(e, 0, sizeof(WordEntry));
-    strncpy(e->word, word, WORD_MAX_LEN - 1);
-    e->next = g_table[b];
-    g_table[b] = e;
+void insert_word(char* word, int docID) {
+    insert_term(word, docID, -1);
 }
 
 void insert_term(const char* word, int docID, int position) {
-    (void)position;
-    insert_word((char*)word, docID);
+    if (!word || !word[0] || docID <= 0) return;
+
+    unsigned long bucket = 0;
+    WordEntry* e = find_entry(word, &bucket);
+    if (!e) {
+        e = (WordEntry*)malloc(sizeof(WordEntry));
+        if (!e) return;
+        memset(e, 0, sizeof(WordEntry));
+        strncpy(e->word, word, WORD_MAX_LEN - 1);
+        e->next = g_table[bucket];
+        g_table[bucket] = e;
+    }
+
+    Posting* prev = NULL;
+    Posting* p = find_posting(e->postingList, docID, &prev);
+    if (p) {
+        p->frequency += 1;
+        if (position >= 0) {
+            PositionNode* pos = (PositionNode*)malloc(sizeof(PositionNode));
+            if (!pos) return;
+            pos->position = position;
+            pos->next = p->positions;
+            p->positions = pos;
+        }
+        return;
+    }
+
+    Posting* node = (Posting*)malloc(sizeof(Posting));
+    if (!node) return;
+    node->docID = docID;
+    node->frequency = 1;
+    node->positions = NULL;
+    if (position >= 0) {
+        PositionNode* pos = (PositionNode*)malloc(sizeof(PositionNode));
+        if (!pos) {
+            free(node);
+            return;
+        }
+        pos->position = position;
+        pos->next = NULL;
+        node->positions = pos;
+    }
+    e->documentFrequency += 1;
+    if (!prev) {
+        node->next = e->postingList;
+        e->postingList = node;
+    } else {
+        node->next = prev->next;
+        prev->next = node;
+    }
 }
 
 Posting* get_postings(char* word) {
