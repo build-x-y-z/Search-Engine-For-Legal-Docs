@@ -11,12 +11,20 @@ int main(void) {
     tokenize_document("data/documents.txt");
 
     printf("Search Engine Ready\n");
+    printf("Commands: <query>, stats, quit\n");
     printf("Enter query (or quit): ");
 
     char query[256];
     while (fgets(query, sizeof(query), stdin)) {
         query[strcspn(query, "\r\n")] = '\0';
         if (strcmp(query, "quit") == 0) break;
+        if (strcmp(query, "stats") == 0) {
+            printf("Documents indexed: %d\n", get_document_count());
+            printf("Vocabulary size: %d\n", get_vocabulary_size());
+            printf("Total tokens indexed: %lld\n", get_total_tokens_indexed());
+            printf("Enter query (or quit): ");
+            continue;
+        }
         printf("Query received: %s\n", query);
         printf("Enter query (or quit): ");
     }
