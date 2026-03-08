@@ -4,6 +4,7 @@
 #include "search.h"
 #include "index.h"
 #include "query_parser.h"
+#include "ranking.h"
 #include "tokenizer.h"
 
 static int search_and_terms(char** terms, int term_count, SearchResult** out_results, int* out_count) {
@@ -74,6 +75,7 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
 
     free(lists);
     free(iters);
+    if (count > 0) rank_results(results, count);
     *out_results = results;
     *out_count = count;
     return 1;
@@ -125,6 +127,7 @@ static int search_or_terms(char** terms, int term_count, SearchResult** out_resu
     }
 
     free(scores);
+    if (count > 0) rank_results(results, count);
     *out_results = results;
     *out_count = count;
     return 1;
