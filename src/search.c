@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "search.h"
 #include "index.h"
@@ -20,12 +21,30 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
         return 0;
     }
 
+    const RankingMode mode = ranking_get_mode();
+    const int n_docs = get_document_count();
+    double* idf = NULL;
+    if (mode == RANK_TFIDF) {
+        idf = (double*)malloc((size_t)term_count * sizeof(double));
+        if (!idf) {
+            free(lists);
+            free(iters);
+            return 0;
+        }
+        for (int i = 0; i < term_count; i++) {
+            int df = get_document_frequency(terms[i]);
+            if (df <= 0 || n_docs <= 0) idf[i] = 0.0;
+            else idf[i] = log((double)n_docs / (double)df);
+        }
+    }
+
     for (int i = 0; i < term_count; i++) {
         lists[i] = get_postings(terms[i]);
         iters[i] = lists[i];
         if (!lists[i]) {
             free(lists);
             free(iters);
+            free(idf);
             return 1;
         }
     }
@@ -35,6 +54,7 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
     if (!results) {
         free(lists);
         free(iters);
+        free(idf);
         return 0;
     }
 
@@ -42,7 +62,7 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
     for (Posting* p0 = lists[0]; p0; p0 = p0->next) {
         int doc = p0->docID;
         int ok = 1;
-        double score = (double)p0->frequency;
+        double score = (mode == RANK_TFIDF && idf) ? ((double)p0->frequency * idf[0]) : (double)p0->frequency;
 
         for (int i = 1; i < term_count; i++) {
             Posting* cur = iters[i];
@@ -52,7 +72,8 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
                 ok = 0;
                 break;
             }
-            score += (double)cur->frequency;
+            if (mode == RANK_TFIDF && idf) score += (double)cur->frequency * idf[i];
+            else score += (double)cur->frequency;
         }
 
         if (ok) {
@@ -75,6 +96,7 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
 
     free(lists);
     free(iters);
+    free(idf);
     if (count > 0) rank_results(results, count);
     *out_results = results;
     *out_count = count;
@@ -88,14 +110,32 @@ static int search_or_terms(char** terms, int term_count, SearchResult** out_resu
 
     int n_docs = get_document_count();
     if (n_docs <= 0) return 1;
+    const RankingMode mode = ranking_get_mode();
 
     double* scores = (double*)calloc((size_t)(n_docs + 1), sizeof(double));
     if (!scores) return 0;
 
+    double* idf = NULL;
+    if (mode == RANK_TFIDF) {
+        idf = (double*)malloc((size_t)term_count * sizeof(double));
+        if (!idf) {
+            free(scores);
+            return 0;
+        }
+        for (int i = 0; i < term_count; i++) {
+            int df = get_document_frequency(terms[i]);
+            if (df <= 0 || n_docs <= 0) idf[i] = 0.0;
+            else idf[i] = log((double)n_docs / (double)df);
+        }
+    }
+
     for (int i = 0; i < term_count; i++) {
         Posting* p = get_postings(terms[i]);
         while (p) {
-            if (p->docID >= 1 && p->docID <= n_docs) scores[p->docID] += (double)p->frequency;
+            if (p->docID >= 1 && p->docID <= n_docs) {
+                if (mode == RANK_TFIDF && idf) scores[p->docID] += (double)p->frequency * idf[i];
+                else scores[p->docID] += (double)p->frequency;
+            }
             p = p->next;
         }
     }
@@ -104,6 +144,7 @@ static int search_or_terms(char** terms, int term_count, SearchResult** out_resu
     SearchResult* results = (SearchResult*)malloc((size_t)cap * sizeof(SearchResult));
     if (!results) {
         free(scores);
+        free(idf);
         return 0;
     }
 
@@ -116,6 +157,7 @@ static int search_or_terms(char** terms, int term_count, SearchResult** out_resu
                 if (!grown) {
                     free(results);
                     free(scores);
+                    free(idf);
                     return 0;
                 }
                 results = grown;
@@ -127,6 +169,7 @@ static int search_or_terms(char** terms, int term_count, SearchResult** out_resu
     }
 
     free(scores);
+    free(idf);
     if (count > 0) rank_results(results, count);
     *out_results = results;
     *out_count = count;
