@@ -49,6 +49,17 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
         }
     }
 
+    int best = 0;
+    int best_len = 2147483647;
+    for (int i = 0; i < term_count; i++) {
+        int len = 0;
+        for (Posting* p = lists[i]; p && len < best_len; p = p->next) len++;
+        if (len < best_len) {
+            best_len = len;
+            best = i;
+        }
+    }
+
     int cap = 32;
     SearchResult* results = (SearchResult*)malloc((size_t)cap * sizeof(SearchResult));
     if (!results) {
@@ -59,12 +70,13 @@ static int search_and_terms(char** terms, int term_count, SearchResult** out_res
     }
 
     int count = 0;
-    for (Posting* p0 = lists[0]; p0; p0 = p0->next) {
+    for (Posting* p0 = lists[best]; p0; p0 = p0->next) {
         int doc = p0->docID;
         int ok = 1;
-        double score = (mode == RANK_TFIDF && idf) ? ((double)p0->frequency * idf[0]) : (double)p0->frequency;
+        double score = (mode == RANK_TFIDF && idf) ? ((double)p0->frequency * idf[best]) : (double)p0->frequency;
 
-        for (int i = 1; i < term_count; i++) {
+        for (int i = 0; i < term_count; i++) {
+            if (i == best) continue;
             Posting* cur = iters[i];
             while (cur && cur->docID < doc) cur = cur->next;
             iters[i] = cur;

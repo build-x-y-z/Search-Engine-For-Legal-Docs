@@ -22,8 +22,10 @@ static void qsort_results(SearchResult* arr, int left, int right) {
     SearchResult pivot = arr[left + (right - left) / 2];
 
     while (i <= j) {
-        while (arr[i].score > pivot.score) i++;
-        while (arr[j].score < pivot.score) j--;
+        while (arr[i].score > pivot.score ||
+               (arr[i].score == pivot.score && arr[i].docID < pivot.docID)) i++;
+        while (arr[j].score < pivot.score ||
+               (arr[j].score == pivot.score && arr[j].docID > pivot.docID)) j--;
         if (i <= j) {
             swap(&arr[i], &arr[j]);
             i++;
