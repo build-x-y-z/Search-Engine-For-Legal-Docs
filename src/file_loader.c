@@ -68,6 +68,12 @@ int load_documents_from_directory(const char* path) {
         rtrim_newline(file_path);
         if (!file_path[0]) continue;
 
+        {
+            const char* leaf = strrchr(file_path, '\\');
+            leaf = leaf ? (leaf + 1) : file_path;
+            if (strcmp(leaf, "documents.txt") == 0) continue;
+        }
+
         char* content = read_entire_file(file_path);
         if (!content) continue;
         g_sink(file_path, content, g_sink_user);
