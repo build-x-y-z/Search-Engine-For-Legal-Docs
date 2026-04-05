@@ -7,6 +7,7 @@
 #define HASH_SIZE 4096
 
 static WordEntry *g_table[HASH_SIZE];
+static int collision_count = 0;
 
 static unsigned long hash_word(const char *s)
 {
@@ -105,7 +106,13 @@ void insert_term(const char *word, int docID, int position)
     WordEntry *e = find_entry(word, &bucket);
     if (!e)
     {
+        if (g_table[bucket] != NULL)
+        {
+            collision_count++;
+        }
+        
         e = (WordEntry *)malloc(sizeof(WordEntry));
+
         if (!e)
             return;
         memset(e, 0, sizeof(WordEntry));
@@ -239,4 +246,6 @@ void debug_print_index()
             }
         }
     }
+
+    printf("\nTotal collisions: %d\n", collision_count);
 }
