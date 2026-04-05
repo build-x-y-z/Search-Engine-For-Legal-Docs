@@ -50,6 +50,7 @@ int main(void) {
     printf("  - Autocomplete: ac <prefix>\n");
     printf("  - Ranking mode: rank tf | rank tfidf\n");
     printf("  - Index statistics: stats\n");
+    printf("  - Debug index: debug\n");
     printf("  - Quit: quit\n\n");
 
     char line[1024];
@@ -63,6 +64,12 @@ int main(void) {
 
         if (strcmp(line, "stats") == 0) {
             print_index_statistics();
+            continue;
+        }
+
+        if (strcmp(line, "debug") == 0)
+        {
+            debug_print_index();
             continue;
         }
 
