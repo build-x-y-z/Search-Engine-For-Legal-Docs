@@ -7,30 +7,15 @@
 #define HASH_SIZE 4096
 
 static WordEntry *g_table[HASH_SIZE];
-static int collision_count = 0;
 
 static unsigned long hash_word(const char *s)
 {
     unsigned long h = 5381UL;
     int c;
     while ((c = (unsigned char)*s++) != 0)
+    {
         h = ((h << 5) + h) + (unsigned long)c;
     return h;
-}
-
-static WordEntry *find_entry(const char *word, unsigned long *out_bucket)
-{
-    unsigned long b = hash_word(word) % (unsigned long)HASH_SIZE;
-    if (out_bucket)
-        *out_bucket = b;
-    WordEntry *cur = g_table[b];
-    while (cur)
-    {
-        if (strcmp(cur->word, word) == 0)
-            return cur;
-        cur = cur->next;
-    }
-    return NULL;
 }
 
 void index_init(void)
@@ -76,6 +61,21 @@ void index_free(void)
     }
 }
 
+static WordEntry *find_entry(const char *word, unsigned long *out_bucket)
+{
+    unsigned long h = hash_word(word) % (unsigned long)HASH_SIZE;
+    if (out_bucket)
+        *out_bucket = h;
+    WordEntry *cur = g_table[h];
+    while (cur)
+    {
+        if (strcmp(cur->word, word) == 0)
+            return cur;
+        cur = cur->next;
+    }
+    return NULL;
+}
+
 static Posting *find_posting(Posting *head, int docID, Posting **out_prev)
 {
     Posting *prev = NULL;
@@ -99,20 +99,16 @@ void insert_word(char *word, int docID)
 
 void insert_term(const char *word, int docID, int position)
 {
-    if (!word || !word[0] || docID <= 0)
+    if (!word || !word[0])
+        return;
+    if (docID <= 0)
         return;
 
     unsigned long bucket = 0;
     WordEntry *e = find_entry(word, &bucket);
     if (!e)
     {
-        if (g_table[bucket] != NULL)
-        {
-            collision_count++;
-        }
-        
         e = (WordEntry *)malloc(sizeof(WordEntry));
-
         if (!e)
             return;
         memset(e, 0, sizeof(WordEntry));
@@ -128,28 +124,30 @@ void insert_term(const char *word, int docID, int position)
         p->frequency += 1;
         if (position >= 0)
         {
-            PositionNode *pos = (PositionNode *)malloc(sizeof(PositionNode));
-            if (!pos)
+            /* Positional indexing is prepared but not used yet. */
+            PositionNode *node = (PositionNode *)malloc(sizeof(PositionNode));
+            if (!node)
                 return;
-            pos->position = position;
-            pos->next = p->positions;
-            p->positions = pos;
+            node->position = position;
+            node->next = p->positions;
+            p->positions = node;
         }
         return;
     }
 
-    Posting *node = (Posting *)malloc(sizeof(Posting));
-    if (!node)
+    /* Insert new posting in sorted order by docID for fast intersections. */
+    Posting *n = (Posting *)malloc(sizeof(Posting));
+    if (!n)
         return;
-    node->docID = docID;
-    node->frequency = 1;
-    node->positions = NULL;
+    n->docID = docID;
+    n->frequency = 1;
+    n->positions = NULL;
     if (position >= 0)
     {
-        PositionNode *pos = (PositionNode *)malloc(sizeof(PositionNode));
-        if (!pos)
+        PositionNode *node = (PositionNode *)malloc(sizeof(PositionNode));
+        if (!node)
         {
-            free(node);
+            free(n);
             return;
         }
         pos->position = position;
@@ -159,13 +157,13 @@ void insert_term(const char *word, int docID, int position)
     e->documentFrequency += 1;
     if (!prev)
     {
-        node->next = e->postingList;
-        e->postingList = node;
+        n->next = e->postingList;
+        e->postingList = n;
     }
     else
     {
-        node->next = prev->next;
-        prev->next = node;
+        n->next = prev->next;
+        prev->next = n;
     }
 }
 
@@ -173,40 +171,41 @@ Posting *get_postings(char *word)
 {
     if (!word || !word[0])
         return NULL;
-    WordEntry *cur = find_entry(word, NULL);
-    return cur ? cur->postingList : NULL;
+    WordEntry *e = find_entry(word, NULL);
+    return e ? e->postingList : NULL;
 }
 
 int get_document_frequency(const char *word)
 {
     if (!word || !word[0])
         return 0;
-    WordEntry *cur = find_entry(word, NULL);
-    return cur ? cur->documentFrequency : 0;
+    WordEntry *e = find_entry(word, NULL);
+    return e ? e->documentFrequency : 0;
 }
 
 int get_vocabulary_size(void)
 {
-    int total = 0;
+    int count = 0;
     for (int i = 0; i < HASH_SIZE; i++)
     {
         for (WordEntry *e = g_table[i]; e; e = e->next)
-            total++;
+            count++;
     }
     return total;
 }
 
 void debug_print_index()
 {
-    printf("\n===== INVERTED INDEX TABLE =====\n");
+    printf("\n===== FULL INVERTED INDEX =====\n");
 
     for (int i = 0; i < HASH_SIZE; i++)
     {
         if (g_table[i] != NULL)
         {
-            printf("\nBucket %d:\n", i);
+            printf("\n[Bucket %d]\n", i);
 
             WordEntry *e = g_table[i];
+
             while (e)
             {
                 printf("  Word: %s | DF: %d | Hash: %lu",
@@ -246,6 +245,4 @@ void debug_print_index()
             }
         }
     }
-
-    printf("\nTotal collisions: %d\n", collision_count);
 }
